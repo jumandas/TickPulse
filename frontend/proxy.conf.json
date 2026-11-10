@@ -1,0 +1,1 @@
+{"/api":{"secure":false,"target":"http://localhost:5000"},"/hubs":{"secure":false,"target":"http://localhost:5000","ws":true}}
