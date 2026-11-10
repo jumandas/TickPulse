@@ -1,0 +1,99 @@
+<header class="topbar">
+  <div>
+    <h1>TickPulse</h1>
+    <p class="subtitle">Real-time synthetic market dashboard. All prices are simulated, no real market data.</p>
+  </div>
+  <div class="status" [class.live]="market.connectionState() === 'connected'">
+    <span class="dot"></span>
+    @if (market.connectionState() === 'connected') {
+      <span>Live</span>
+    } @else if (market.connectionState() === 'connecting') {
+      <span>Connecting</span>
+    } @else {
+      <span>Disconnected</span>
+    }
+  </div>
+</header>
+
+<main class="layout">
+  <section class="panel quotes">
+    <h2>Live quotes</h2>
+    <table>
+      <thead>
+        <tr><th>Symbol</th><th>Price</th><th>Change</th><th>Volume</th><th>Updated</th><th></th></tr>
+      </thead>
+      <tbody>
+        @for (quote of market.sortedQuotes(); track quote.ticker) {
+          <tr (click)="market.selectTicker(quote.ticker)" [class.selected]="market.selectedTicker() === quote.ticker">
+            <td><strong>{{ quote.ticker }}</strong></td>
+            <td>{{ quote.price | number:'1.2-2' }}</td>
+            <td [class.up]="quote.changePercent > 0" [class.down]="quote.changePercent < 0">
+              {{ quote.changePercent > 0 ? '+' : '' }}{{ quote.changePercent | number:'1.2-2' }}%
+            </td>
+            <td>{{ quote.volume | number }}</td>
+            <td>{{ formatTime(quote.timestamp) }}</td>
+            <td><button class="small" (click)="market.addToWatchlist(quote.ticker); $event.stopPropagation()">Watch</button></td>
+          </tr>
+        } @empty {
+          <tr><td colspan="6">Waiting for the first ticks. Make sure the API is running on port 5000.</td></tr>
+        }
+      </tbody>
+    </table>
+  </section>
+
+  <section class="panel chart">
+    <h2>{{ market.selectedTicker() }} price, last 60 minutes</h2>
+    @if (chartPoints()) {
+      <svg viewBox="0 0 600 220" preserveAspectRatio="none" class="chart-svg">
+        <polyline [attr.points]="chartPoints()" fill="none" stroke="#2563eb" stroke-width="2" />
+      </svg>
+      @if (chartLast(); as last) {
+        <p class="chart-caption">Latest: {{ last.price | number:'1.2-2' }} at {{ formatTime(last.timestamp) }}</p>
+      }
+    } @else {
+      <p>No history yet for {{ market.selectedTicker() }}. History builds up as ticks arrive.</p>
+    }
+  </section>
+
+  <section class="panel watchlist">
+    <h2>Watchlist</h2>
+    <div class="watch-add">
+      <select [(ngModel)]="tickerToAdd">
+        <option value="">Pick a symbol</option>
+        @for (symbol of market.symbols(); track symbol.ticker) {
+          <option [value]="symbol.ticker">{{ symbol.ticker }} - {{ symbol.name }}</option>
+        }
+      </select>
+      <button (click)="addTicker()">Add</button>
+    </div>
+    <ul>
+      @for (item of market.watchlist(); track item.id) {
+        <li>
+          <span><strong>{{ item.ticker }}</strong></span>
+          <button class="small" (click)="market.removeFromWatchlist(item.ticker)">Remove</button>
+        </li>
+      } @empty {
+        <li class="muted">Nothing watched yet. Click Watch on a quote to add it.</li>
+      }
+    </ul>
+  </section>
+
+  <section class="panel analyst">
+    <h2>AI market analyst <span class="badge">{{ market.analystName() }}</span></h2>
+    <p class="muted">The analyst watches the tick stream and explains unusual events in plain English.</p>
+    <ul class="events">
+      @for (event of market.analystEvents(); track event.id) {
+        <li>
+          <div class="event-head">
+            <strong>{{ anomalyLabel(event.type) }}: {{ event.ticker }}</strong>
+            <span class="muted">{{ formatTime(event.detectedAt) }}</span>
+          </div>
+          <p>{{ event.summary }}</p>
+          <p>{{ event.explanation }}</p>
+        </li>
+      } @empty {
+        <li class="muted">No events yet. The analyst speaks up when a price jumps or a symbol goes quiet.</li>
+      }
+    </ul>
+  </section>
+</main>
