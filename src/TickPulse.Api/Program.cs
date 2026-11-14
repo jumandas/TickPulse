@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using TickPulse.Api.Data;
 using TickPulse.Api.Hubs;
 using TickPulse.Api.Services;
@@ -29,7 +30,7 @@ builder.Services.AddCors(options =>
         .AllowAnyMethod()));
 
 builder.Services.AddDbContext<TickPulseDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("TickPulseDb")));
+    options.UseNpgsql(NormalizeConnectionString(builder.Configuration.GetConnectionString("TickPulseDb"))));
 
 // Shared state between the engine, the controllers, and the analyst.
 builder.Services.AddSingleton<LatestQuotes>();
@@ -74,10 +75,10 @@ app.MapHub<MarketHub>("/hubs/market");
 // Create the database and seed the synthetic symbols on startup.
 using (var scope = app.Services.CreateScope())
 {
-    var db = scope.ServiceProvider.GetRequiredService<TickPulseDbContext>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     try
     {
+        var db = scope.ServiceProvider.GetRequiredService<TickPulseDbContext>();
         await db.Database.EnsureCreatedAsync();
         await SymbolSeeder.SeedAsync(db, app.Configuration);
         logger.LogInformation("Database ready and symbols seeded.");
@@ -91,6 +92,26 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+
+// Hosts like Render provide Postgres as a URL (postgres://user:pass@host:port/db),
+// but Npgsql's EF Core provider expects keyword format, so convert URL form
+// first. NpgsqlConnectionStringBuilder handles quoting, so passwords with
+// special characters survive the conversion.
+static string NormalizeConnectionString(string? connectionString)
+{
+    if (string.IsNullOrWhiteSpace(connectionString) || !connectionString.Contains("://"))
+        return connectionString ?? string.Empty;
+    var uri = new Uri(connectionString);
+    var userInfo = uri.UserInfo.Split(':', 2);
+    return new NpgsqlConnectionStringBuilder
+    {
+        Host = uri.Host,
+        Port = uri.Port > 0 ? uri.Port : 5432,
+        Database = uri.AbsolutePath.TrimStart('/'),
+        Username = userInfo.Length > 0 ? Uri.UnescapeDataString(userInfo[0]) : string.Empty,
+        Password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty
+    }.ConnectionString;
+}
 
 // Needed so the test project can host the API in memory.
 public partial class Program { }
